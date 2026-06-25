@@ -1,0 +1,39 @@
+[package]
+name = "hfstol"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "From-scratch pure-Rust HFST optimized-lookup (.hfstol) applier, differentially verified against hfst-optimized-lookup."
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["hfst", "fst", "transducer", "morphology", "nlp"]
+categories = ["text-processing"]
+repository = "https://github.com/VoiceLessQ/hfstol"
+homepage = "https://github.com/VoiceLessQ/hfstol"
+# Keep the published crate to source + small toy fixtures: the big differential
+# oracle harness stays in git but out of the .crate.
+exclude = ["/oracle"]
+
+[lib]
+name = "hfstol"
+path = "src/lib.rs"
+
+# The differential-test harness reads stdin and loads files, so it needs `std`.
+[[bin]]
+name = "diff"
+path = "src/bin/diff.rs"
+required-features = ["std"]
+
+[features]
+default = ["std"]
+# `std` adds `Transducer::from_path`, the `Io` error variant, and the
+# `std::error::Error` impl. Without it the crate is `no_std` + `alloc`: the core
+# `from_bytes` / `lookup` API still works (e.g. on `wasm32-unknown-unknown`).
+std = []
+
+# Like the other ports in this tree, this crate has ZERO runtime dependencies:
+#   * the .hfstol binary format is parsed by a hand-written byte reader,
+#   * lookup needs only `alloc` (Vec/String/BTreeMap/Rc).
+[dependencies]
+
+[dev-dependencies]

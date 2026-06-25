@@ -1,0 +1,4 @@
+cat+N+Pl
+cat+N+Sg
+dog+N+Pl
+dog+N+Sg

@@ -1,0 +1,9 @@
+/target
+Cargo.lock
+
+# Generated differential-test oracle (regenerate with oracle/gen_oracle.py)
+/oracle/cases*.tsv
+/oracle/words*.txt
+
+# Python bytecode cache from the harness scripts
+__pycache__/

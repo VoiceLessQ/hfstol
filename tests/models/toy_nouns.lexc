@@ -1,0 +1,14 @@
+! Toy noun analyzer fixture: regular +Sg/+Pl with a multichar-symbol tagset.
+! Built (and inverted to surface->analysis) by build_fixtures.py.
+Multichar_Symbols +N +Sg +Pl
+
+LEXICON Root
+  Nouns ;
+
+LEXICON Nouns
+  cat:cat   Infl ;
+  dog:dog   Infl ;
+
+LEXICON Infl
+  +N+Sg:0   # ;
+  +N+Pl:s   # ;

@@ -1,0 +1,16 @@
+! Toy fixture carrying flag-diacritic symbols (@P.../@R...), so the loader and
+! traversal must recognise them and erase them from the output. NB: how strictly
+! hfst-optimized-lookup *enforces* these flags is captured by the committed
+! expected output (the oracle is the source of truth), not assumed here.
+! Built (and inverted to surface->analysis) by build_fixtures.py.
+Multichar_Symbols +Det +N @P.CASE.NOM@ @R.CASE.NOM@
+
+LEXICON Root
+  Dets ;
+
+LEXICON Dets
+  the+Det@P.CASE.NOM@:the   Nouns ;
+  a+Det:a                   Nouns ;
+
+LEXICON Nouns
+  +cat+N@R.CASE.NOM@:cat   # ;

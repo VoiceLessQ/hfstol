@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.hfstol binary
+*.hfst binary
+*.tsv text eol=lf
