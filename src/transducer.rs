@@ -137,9 +137,47 @@ impl Transducer {
     /// erased from the output. Every path that reaches a final state at the end
     /// of the input yields one [`Analysis`].
     pub fn lookup(&self, input: &str) -> Result<Vec<Analysis>> {
+        Ok(self.walk(input, &[]).0)
+    }
+
+    /// Like [`Transducer::lookup`], but also report a break-localization
+    /// frontier: the byte offset of the longest input prefix the transducer
+    /// accepts as a COMPLETE analysis (a final state reached mid-input).
+    /// 0 means no prefix stands alone. For a rejected word a nonzero frontier
+    /// marks a "valid word + broken tail" split, which lets a speller
+    /// underline the tail instead of the whole word. ("Longest prefix with
+    /// live states" was tried first and is useless for polysynthetic
+    /// languages: nearly every prefix has live continuations, so it always
+    /// reaches the end of the word.)
+    ///
+    /// `banned_outputs` prunes every path that would emit one of the given
+    /// output symbols. Ban the error-tolerant tags of descriptive analyzers
+    /// (`+Err/Orth`, `+Err/Sub`) so that a prefix only accepted as a known
+    /// misspelling does not count as valid. Empty slice = no pruning.
+    pub fn lookup_with_frontier(
+        &self,
+        input: &str,
+        banned_outputs: &[u16],
+    ) -> Result<(Vec<Analysis>, usize)> {
+        Ok(self.walk(input, banned_outputs))
+    }
+
+    /// Symbol numbers whose name satisfies `pred` (e.g. tags like `+Err/Orth`),
+    /// for use as `banned_outputs` in [`Transducer::lookup_with_frontier`].
+    pub fn symbols_where(&self, mut pred: impl FnMut(&str) -> bool) -> Vec<u16> {
+        self.alphabet
+            .symbols
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| pred(s))
+            .map(|(i, _)| i as u16)
+            .collect()
+    }
+
+    fn walk(&self, input: &str, banned_outputs: &[u16]) -> (Vec<Analysis>, usize) {
         let tokens = match self.tokenize(input) {
             Some(t) => t,
-            None => return Ok(Vec::new()), // a character with no in-alphabet symbol
+            None => return (Vec::new(), 0), // a character with no in-alphabet symbol
         };
         let mut walk = Lookup {
             t: self,
@@ -147,9 +185,19 @@ impl Transducer {
             output: Vec::new(),
             flags: FlagState::default(),
             results: Vec::new(),
+            max_final_pos: 0,
+            banned_outputs,
         };
         walk.step(0, 0, 0.0);
-        Ok(walk.results)
+        // Token index -> byte offset: sum the surface text of consumed tokens.
+        let frontier = tokens[..walk.max_final_pos.min(tokens.len())]
+            .iter()
+            .map(|tok| match &tok.orig {
+                Some(text) => text.len(),
+                None => self.alphabet.symbols[tok.sym as usize].len(),
+            })
+            .sum();
+        (walk.results, frontier)
     }
 
     /// Split `input` into transducer symbols. Returns `None` if a character
@@ -293,11 +341,19 @@ struct Lookup<'a> {
     /// backtrack.
     flags: FlagState<'a>,
     results: Vec<Analysis>,
+    /// Deepest input position at which some path stood in a final state
+    /// (i.e. the longest prefix accepted as a complete analysis).
+    max_final_pos: usize,
+    /// Output symbols that prune a path (error-tolerant sublexica etc.).
+    banned_outputs: &'a [u16],
 }
 
 impl Lookup<'_> {
     /// Visit the state addressed by `node` with the input cursor at `pos`.
     fn step(&mut self, node: u32, pos: usize, weight: f32) {
+        if pos > self.max_final_pos && self.is_final(node) {
+            self.max_final_pos = pos;
+        }
         if node >= TARGET_TABLE_START {
             let t = (node - TARGET_TABLE_START) as usize;
             // Epsilon/flag transitions of this state begin right after its
@@ -350,6 +406,10 @@ impl Lookup<'_> {
                 break; // start of the next state / end of this block
             }
             if input == EPSILON {
+                if self.banned_outputs.contains(&output) {
+                    j += 1;
+                    continue;
+                }
                 self.output.push(self.out_sym(output, None));
                 self.step(target, pos, weight + w);
                 self.output.pop();
@@ -377,6 +437,10 @@ impl Lookup<'_> {
             }
             if tr.input == tok.sym {
                 let (output, target, w) = (tr.output, tr.target, tr.weight);
+                if self.banned_outputs.contains(&output) {
+                    j += 1;
+                    continue;
+                }
                 self.output.push(self.out_sym(output, tok.orig.clone()));
                 self.step(target, pos + 1, weight + w);
                 self.output.pop();
@@ -394,6 +458,19 @@ impl Lookup<'_> {
                 let start = (e.target - TARGET_TABLE_START) as usize;
                 self.transitions(start, tok, pos, weight);
             }
+        }
+    }
+
+    /// Is `node` a final state? (Finality in this format is unconditional:
+    /// flag state gates transitions, not acceptance.)
+    fn is_final(&self, node: u32) -> bool {
+        if node >= TARGET_TABLE_START {
+            let t = (node - TARGET_TABLE_START) as usize;
+            matches!(self.t.transition_table.get(t),
+                Some(tr) if tr.input == NO_SYMBOL && tr.output == NO_SYMBOL && tr.target == 1)
+        } else {
+            matches!(self.t.index_table.get(node as usize),
+                Some(e) if e.input == NO_SYMBOL && e.target != NO_TARGET)
         }
     }
 
